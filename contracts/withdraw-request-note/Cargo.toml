@@ -1,5 +1,5 @@
 [package]
-name = "increment-note"
+name = "withdraw-request-note"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,14 +10,14 @@ crate-type = ["cdylib"]
 miden = { workspace = true }
 
 [package.metadata.component]
-package = "miden:increment-note"
+package = "miden:withdraw-request-note"
 
 # Miden dependencies for cargo-miden build/linking
 [package.metadata.miden.dependencies]
-"miden:counter-account" = { path = "../counter-account" }
+"miden:bank-account" = { path = "../bank-account" }
 
 [package.metadata.component.target.dependencies]
-"miden:counter-account" = { path = "../counter-account/target/generated-wit/" }
+"miden:bank-account" = { path = "../bank-account/target/generated-wit/" }
 
 [package.metadata.miden]
 project-kind = "note-script"
