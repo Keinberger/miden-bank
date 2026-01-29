@@ -9,6 +9,7 @@ use miden_client::{
     transaction::OutputNote,
     Felt, Word,
 };
+use miden_core::crypto::hash::Rpo256;
 use miden_lib::note::utils::build_p2id_recipient;
 use miden_objects::{
     account::AccountId,
@@ -131,26 +132,66 @@ async fn withdraw_test() -> anyhow::Result<()> {
 
     println!("Computed P2ID tag for sender: 0x{:08X}", p2id_tag_u32);
 
-    // Serial number now only 3 elements (4th will be padded with 0 in note script)
-    let p2id_output_note_serial_num =
-        Word::from([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(0)]);
+    // Tag data padded to 4 Felts (1 Word)
+    let tag_data = vec![p2id_tag_felt, Felt::new(0), Felt::new(0), Felt::new(0)];
+
+    // Random serial number - MUST be unique per note
+    // In production, this would be generated randomly. For testing, we use fixed values.
+    let p2id_output_note_serial_num = Word::from([
+        Felt::new(0x1234567890abcdef),
+        Felt::new(0xfedcba0987654321),
+        Felt::new(0xdeadbeefcafebabe),
+        Felt::new(0x0123456789abcdef),
+    ]);
+
+    // Compute the commitment = hash(tag_data)
+    // This is used as the second key in the two-level advice lookup
+    let commitment_digest = Rpo256::hash_elements(&tag_data);
+    let commitment_word = Word::from([
+        commitment_digest[0],
+        commitment_digest[1],
+        commitment_digest[2],
+        commitment_digest[3],
+    ]);
+
+    println!(
+        "Serial num (random): {:?}",
+        p2id_output_note_serial_num
+    );
+    println!(
+        "Commitment (hash of tag data): {:?}",
+        commitment_word
+    );
 
     // Note inputs layout:
     // [0-3]: withdraw asset (amount, 0, faucet_suffix, faucet_prefix)
-    // [4-6]: serial_num (3 elements)
-    // [7]: tag
+    // [4-7]: serial_num (random/unique per note)
+    // [8-11]: commitment (hash of [tag, 0, 0, 0]) - used as key for advice lookup
+    // Tag is loaded from advice provider using commitment as key
     let withdraw_request_note_inputs = vec![
         // WITHDRAW ASSET WORD
         Felt::new(withdraw_amount),
         Felt::new(0),
         faucet.id().suffix(),
         faucet.id().prefix().as_felt(),
-        // P2ID OUTPUT NOTE SERIAL NUMBER (3 elements)
-        Felt::new(1),
-        Felt::new(2),
-        Felt::new(3),
-        // P2ID NOTE TAG
-        p2id_tag_felt,
+        // P2ID OUTPUT NOTE SERIAL NUMBER (random, unique per note)
+        p2id_output_note_serial_num[0],
+        p2id_output_note_serial_num[1],
+        p2id_output_note_serial_num[2],
+        p2id_output_note_serial_num[3],
+        // COMMITMENT (hash of [tag, 0, 0, 0])
+        commitment_word[0],
+        commitment_word[1],
+        commitment_word[2],
+        commitment_word[3],
+    ];
+
+    // Advice map entry:
+    // commitment -> [tag, 0, 0, 0]
+    // The note script uses this commitment (passed in inputs) as the key
+    // adv_load_preimage verifies that hash(tag_data) == commitment
+    let advice_map_entries: Vec<(Word, Vec<Felt>)> = vec![
+        (commitment_word, tag_data),
     ];
 
     let withdraw_request_note_package = Arc::new(build_project_in_dir(
@@ -220,6 +261,7 @@ async fn withdraw_test() -> anyhow::Result<()> {
 
     let withdraw_request_tx_context = mock_chain
         .build_tx_context(bank_account.id(), &[withdraw_request_note.id()], &[])?
+        .extend_advice_map(advice_map_entries) // Inject the tag via advice provider
         .extend_expected_output_notes(vec![OutputNote::Full(p2id_output_note.into())])
         .build()?;
 
