@@ -10,9 +10,44 @@ use miden_client::{
     Felt, Word,
 };
 use miden_lib::note::utils::build_p2id_recipient;
-use miden_objects::asset::{Asset, FungibleAsset};
+use miden_objects::{
+    account::AccountId,
+    asset::{Asset, FungibleAsset},
+};
 use miden_testing::{Auth, MockChain};
 use std::{path::Path, sync::Arc};
+
+/// Compute a P2ID note tag for a local account.
+///
+/// This mimics `NoteTag::from_account_id()` from miden-base which is not available
+/// in miden-objects 0.12. The algorithm extracts the top 14 bits of the account ID
+/// prefix and combines them with the LocalAny prefix (0xC0000000).
+///
+/// # Arguments
+/// * `account_id` - The target account ID that will consume the P2ID note
+///
+/// # Returns
+/// A NoteTag::LocalAny with account ID bits embedded for routing
+fn compute_p2id_tag_for_local_account(account_id: AccountId) -> NoteTag {
+    const LOCAL_ANY_PREFIX: u32 = 0xC000_0000; // 0b11 prefix for LocalAny
+    const TAG_BITS: u8 = 14; // Default tag length for local accounts
+
+    // Get the account ID prefix as u64
+    let prefix_u64 = account_id.prefix().as_u64();
+
+    // Right shift by 34 to get top 30 bits of the 64-bit prefix, cast to u32
+    let shifted = (prefix_u64 >> 34) as u32;
+
+    // Mask to keep only top TAG_BITS bits in the 30-bit space
+    // This creates a mask like 0x3FFF0000 for 14 bits
+    let mask = u32::MAX << (30 - TAG_BITS);
+    let account_bits = shifted & mask;
+
+    // Combine with LocalAny prefix
+    let tag_value = LOCAL_ANY_PREFIX | account_bits;
+
+    NoteTag::LocalAny(tag_value)
+}
 
 #[tokio::test]
 async fn withdraw_test() -> anyhow::Result<()> {
@@ -86,21 +121,36 @@ async fn withdraw_test() -> anyhow::Result<()> {
 
     let withdraw_amount = deposit_amount / 2;
 
-    let p2id_output_note_serial_num =
-        Word::from([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]);
+    // Compute proper P2ID tag for the sender (depositor) who will consume the output note
+    let p2id_tag = compute_p2id_tag_for_local_account(sender.id());
+    let p2id_tag_u32 = match p2id_tag {
+        NoteTag::LocalAny(v) => v,
+        _ => panic!("Expected LocalAny tag"),
+    };
+    let p2id_tag_felt = Felt::new(p2id_tag_u32 as u64);
 
-    // Correct order of inputs
+    println!("Computed P2ID tag for sender: 0x{:08X}", p2id_tag_u32);
+
+    // Serial number now only 3 elements (4th will be padded with 0 in note script)
+    let p2id_output_note_serial_num =
+        Word::from([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(0)]);
+
+    // Note inputs layout:
+    // [0-3]: withdraw asset (amount, 0, faucet_suffix, faucet_prefix)
+    // [4-6]: serial_num (3 elements)
+    // [7]: tag
     let withdraw_request_note_inputs = vec![
-        // WITHDRAW ASSET WORD (reverse order)
+        // WITHDRAW ASSET WORD
         Felt::new(withdraw_amount),
         Felt::new(0),
         faucet.id().suffix(),
         faucet.id().prefix().as_felt(),
-        // P2ID OUTPUT NOTE SERIAL NUMBER WORD (correct order)
+        // P2ID OUTPUT NOTE SERIAL NUMBER (3 elements)
         Felt::new(1),
         Felt::new(2),
         Felt::new(3),
-        Felt::new(4),
+        // P2ID NOTE TAG
+        p2id_tag_felt,
     ];
 
     let withdraw_request_note_package = Arc::new(build_project_in_dir(
@@ -147,32 +197,26 @@ async fn withdraw_test() -> anyhow::Result<()> {
     // STEP 4: MAKE WITHDRAW
     // *********************************************************************************
 
-    // TODO: create expected P2ID output note
+    // Create expected P2ID output note with the computed tag
     let recipient = build_p2id_recipient(sender.id(), p2id_output_note_serial_num)?;
-    let tag = NoteTag::LocalAny(3221225472);
-    let aux = Felt::new(24);
+    let aux = Felt::new(0); // aux is 0 in the bank account code
     let p2id_output_note_asset = FungibleAsset::new(faucet.id(), withdraw_amount)?;
     let p2id_output_note_assets = NoteAssets::new(vec![p2id_output_note_asset.into()])?;
     let p2id_output_note_metadata = NoteMetadata::new(
         bank_account.id(),
         NoteType::Public,
-        tag,
+        p2id_tag, // Use the computed tag
         NoteExecutionHint::none(),
         aux,
     )?;
-    println!("Recipient raw: {:?}", recipient.digest()); // 0x792a35a4215690888984a2c0ccd8518d8270d6c815dc965771a88f0566a0311c
-    println!("Recipient: {:?}", recipient.digest().to_hex()); // 0x792a35a4215690888984a2c0ccd8518d8270d6c815dc965771a88f0566a0311c
+
+    println!("Recipient digest: {:?}", recipient.digest().to_hex());
+
     let p2id_output_note = Note::new(
         p2id_output_note_assets,
         p2id_output_note_metadata,
         recipient,
     );
-
-    println!(
-        "faucet prefix: {:?}",
-        faucet.id().prefix().as_felt().as_int()
-    );
-    println!("faucet suffix: {:?}", faucet.id().suffix().as_int());
 
     let withdraw_request_tx_context = mock_chain
         .build_tx_context(bank_account.id(), &[withdraw_request_note.id()], &[])?
@@ -185,6 +229,8 @@ async fn withdraw_test() -> anyhow::Result<()> {
 
     mock_chain.add_pending_executed_transaction(&executed_withdraw_request_transaction)?;
     mock_chain.prove_next_block()?;
+
+    println!("Withdraw test passed!");
 
     Ok(())
 }

@@ -90,7 +90,8 @@ impl Bank {
     /// * `depositor` - The AccountId of the user withdrawing
     /// * `withdraw_asset` - The fungible asset to withdraw
     /// * `serial_num` - Unique serial number for the P2ID output note
-    pub fn withdraw(&mut self, depositor: AccountId, withdraw_asset: Asset, serial_num: Word) {
+    /// * `tag` - The note tag for the P2ID output note (allows caller to specify routing)
+    pub fn withdraw(&mut self, depositor: AccountId, withdraw_asset: Asset, serial_num: Word, tag: Felt) {
         // Extract the fungible amount from the asset
         let withdraw_amount = withdraw_asset.inner[0];
 
@@ -108,7 +109,7 @@ impl Bank {
         self.balances.set(key, new_balance);
 
         // Create a P2ID note to send the requested asset back to the depositor
-        self.create_p2id_note(serial_num, &withdraw_asset, depositor);
+        self.create_p2id_note(serial_num, &withdraw_asset, depositor, tag);
     }
 
     /// Create a P2ID (Pay-to-ID) note to send assets to a recipient.
@@ -117,11 +118,12 @@ impl Bank {
     /// * `serial_num` - Unique serial number for the note
     /// * `asset` - The asset to include in the note
     /// * `recipient_id` - The AccountId that can consume this note
-    fn create_p2id_note(&mut self, serial_num: Word, asset: &Asset, recipient_id: AccountId) {
-        // Tag: LocalAny with payload 0
-        // LocalAny (0b11 prefix) allows any note type (public or private)
-        // 0xC0000000 = 0b11000000_00000000_00000000_00000000
-        let tag = Tag::from(Felt::from_u32(0xC0000000));
+    /// * `tag` - The note tag (passed by caller to allow proper P2ID routing)
+    fn create_p2id_note(&mut self, serial_num: Word, asset: &Asset, recipient_id: AccountId, tag: Felt) {
+        // Convert the passed tag Felt to a Tag
+        // The caller is responsible for computing the proper P2ID tag
+        // (typically LocalAny with account ID bits embedded)
+        let tag = Tag::from(tag);
 
         // Auxiliary data - can be used for application-specific purposes
         let aux = felt!(0);
