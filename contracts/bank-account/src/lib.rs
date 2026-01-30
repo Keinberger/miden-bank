@@ -175,12 +175,16 @@ impl Bank {
     /// * `withdraw_asset` - The fungible asset to withdraw
     /// * `serial_num` - Unique serial number for the P2ID output note
     /// * `tag` - The note tag for the P2ID output note (allows caller to specify routing)
+    /// * `aux` - Auxiliary data for the note (application-specific, typically 0)
+    /// * `note_type` - Note type: 1 = Public (stored on-chain), 2 = Private (off-chain)
     pub fn withdraw(
         &mut self,
         depositor: AccountId,
         withdraw_asset: Asset,
         serial_num: Word,
         tag: Felt,
+        aux: Felt,
+        note_type: Felt,
     ) {
         // Extract the fungible amount from the asset
         let withdraw_amount = withdraw_asset.inner[0];
@@ -199,7 +203,7 @@ impl Bank {
         self.balances.set(key, new_balance);
 
         // Create a P2ID note to send the requested asset back to the depositor
-        self.create_p2id_note(serial_num, &withdraw_asset, depositor, tag);
+        self.create_p2id_note(serial_num, &withdraw_asset, depositor, tag, aux, note_type);
     }
 
     /// Create a P2ID (Pay-to-ID) note to send assets to a recipient.
@@ -209,27 +213,29 @@ impl Bank {
     /// * `asset` - The asset to include in the note
     /// * `recipient_id` - The AccountId that can consume this note
     /// * `tag` - The note tag (passed by caller to allow proper P2ID routing)
+    /// * `aux` - Auxiliary data for application-specific purposes
+    /// * `note_type` - Note type as Felt: 1 = Public, 2 = Private
     fn create_p2id_note(
         &mut self,
         serial_num: Word,
         asset: &Asset,
         recipient_id: AccountId,
         tag: Felt,
+        aux: Felt,
+        note_type: Felt,
     ) {
         // Convert the passed tag Felt to a Tag
         // The caller is responsible for computing the proper P2ID tag
         // (typically LocalAny with account ID bits embedded)
         let tag = Tag::from(tag);
 
-        // Auxiliary data - can be used for application-specific purposes
-        let aux: Felt = felt!(0);
+        // Convert note_type Felt to NoteType
+        // 1 = Public (stored on-chain), 2 = Private (off-chain)
+        let note_type = NoteType::from(note_type);
 
-        // Note type: Public (1)
-        // Public notes have their full data stored on-chain
-        let note_type = NoteType::from(Felt::from_u32(1));
-
-        // Execution hint: None (0)
-        // No specific execution timing requirements
+        // Execution hint: always (standard P2ID behavior per miden-base)
+        // This is hardcoded to match miden-base's standard P2ID note implementation
+        // which uses NoteExecutionHint::always() - represented as 0 in Felt form
         let execution_hint = felt!(0);
 
         // Get the P2ID note script root digest

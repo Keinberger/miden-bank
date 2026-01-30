@@ -150,10 +150,16 @@ async fn withdraw_test() -> anyhow::Result<()> {
 
     println!("Serial num (random): {:?}", p2id_output_note_serial_num);
 
+    // Aux and note_type for the P2ID output note
+    let aux = Felt::new(0); // No auxiliary data
+    let note_type_felt = Felt::new(1); // 1 = Public note (stored on-chain)
+
     // Note inputs layout:
     // [0-3]: withdraw asset (amount, 0, faucet_suffix, faucet_prefix)
     // [4-7]: serial_num (random/unique per note)
     // [8]: tag (P2ID note tag for routing)
+    // [9]: aux (auxiliary data)
+    // [10]: note_type (1 = Public, 2 = Private)
     let withdraw_request_note_inputs = vec![
         // WITHDRAW ASSET WORD
         Felt::new(withdraw_amount),
@@ -167,6 +173,10 @@ async fn withdraw_test() -> anyhow::Result<()> {
         p2id_output_note_serial_num[3],
         // TAG (directly passed, no advice provider needed)
         p2id_tag_felt,
+        // AUX (auxiliary data)
+        aux,
+        // NOTE TYPE (1 = Public)
+        note_type_felt,
     ];
 
     let withdraw_request_note_package = Arc::new(build_project_in_dir(

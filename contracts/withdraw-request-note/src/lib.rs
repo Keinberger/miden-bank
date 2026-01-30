@@ -16,14 +16,16 @@ use crate::bindings::miden::bank_account::bank_account;
 /// 1. Note is created by a depositor specifying the withdrawal details
 /// 2. Bank account consumes this note
 /// 3. Note script reads the sender (depositor) and inputs
-/// 4. Calls `bank_account::withdraw(depositor, asset, serial_num, tag)`
+/// 4. Calls `bank_account::withdraw(depositor, asset, serial_num, tag, aux, note_type)`
 /// 5. Bank updates the depositor's balance
-/// 6. Bank creates a P2ID note with the specified tag to send assets back
+/// 6. Bank creates a P2ID note with the specified parameters to send assets back
 ///
-/// # Note Inputs (9 Felts)
+/// # Note Inputs (11 Felts)
 /// [0-3]: withdraw asset (amount, 0, faucet_suffix, faucet_prefix)
 /// [4-7]: serial_num (random/unique per note)
 /// [8]: tag (P2ID note tag for routing)
+/// [9]: aux (auxiliary data, application-specific, typically 0)
+/// [10]: note_type (1 = Public, 2 = Private)
 #[note_script]
 fn run(_arg: Word) {
     // The depositor is whoever created/sent this note
@@ -41,6 +43,12 @@ fn run(_arg: Word) {
     // Tag: single Felt for P2ID note routing
     let tag = inputs[8];
 
+    // Aux: auxiliary data for application-specific purposes
+    let aux = inputs[9];
+
+    // Note type: 1 = Public, 2 = Private
+    let note_type = inputs[10];
+
     // Call the bank account to withdraw the assets
-    bank_account::withdraw(depositor, withdraw_asset, serial_num, tag);
+    bank_account::withdraw(depositor, withdraw_asset, serial_num, tag, aux, note_type);
 }
