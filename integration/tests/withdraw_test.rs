@@ -13,6 +13,7 @@ use miden_lib::note::utils::build_p2id_recipient;
 use miden_objects::{
     account::AccountId,
     asset::{Asset, FungibleAsset},
+    transaction::TransactionScript,
 };
 use miden_testing::{Auth, MockChain};
 use std::{path::Path, sync::Arc};
@@ -80,12 +81,19 @@ async fn withdraw_test() -> anyhow::Result<()> {
         Path::new("../contracts/deposit-note"),
         true,
     )?);
+    let init_tx_script_package = Arc::new(build_project_in_dir(
+        Path::new("../contracts/init-tx-script"),
+        true,
+    )?);
 
-    // Create the bank account with empty storage
+    // Create the bank account with storage slots:
+    // - Slot 0: initialized flag (Value, starts as 0)
+    // - Slot 1: balances map (StorageMap)
     let bank_cfg = AccountCreationConfig {
-        storage_slots: vec![miden_client::account::StorageSlot::Map(
-            StorageMap::with_entries([])?,
-        )],
+        storage_slots: vec![
+            miden_client::account::StorageSlot::Value(Word::default()),
+            miden_client::account::StorageSlot::Map(StorageMap::with_entries([])?),
+        ],
         ..Default::default()
     };
 
@@ -140,10 +148,7 @@ async fn withdraw_test() -> anyhow::Result<()> {
         Felt::new(0x0123456789abcdef),
     ]);
 
-    println!(
-        "Serial num (random): {:?}",
-        p2id_output_note_serial_num
-    );
+    println!("Serial num (random): {:?}", p2id_output_note_serial_num);
 
     // Note inputs layout:
     // [0-3]: withdraw asset (amount, 0, faucet_suffix, faucet_prefix)
@@ -181,11 +186,31 @@ async fn withdraw_test() -> anyhow::Result<()> {
     builder.add_output_note(OutputNote::Full(withdraw_request_note.clone().into()));
 
     // *********************************************************************************
-    // STEP 3: MAKE DEPOSIT
+    // STEP 3: INITIALIZE THE BANK VIA TX SCRIPT
     // *********************************************************************************
+    // The bank must be initialized before deposits are accepted.
 
     // Build the mock chain
     let mut mock_chain = builder.build()?;
+
+    let init_program = init_tx_script_package.unwrap_program();
+    let init_tx_script = TransactionScript::new((*init_program).clone());
+
+    let init_tx_context = mock_chain
+        .build_tx_context(bank_account.id(), &[], &[])?
+        .tx_script(init_tx_script)
+        .build()?;
+
+    let executed_init = init_tx_context.execute().await?;
+    bank_account.apply_delta(&executed_init.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&executed_init)?;
+    mock_chain.prove_next_block()?;
+
+    println!("Bank initialized successfully");
+
+    // *********************************************************************************
+    // STEP 4: MAKE DEPOSIT
+    // *********************************************************************************
 
     // Build the transaction context where bank consumes the deposit note
     let deposit_tx_context = mock_chain
@@ -205,7 +230,7 @@ async fn withdraw_test() -> anyhow::Result<()> {
     println!("Bank deposit successful");
 
     // *********************************************************************************
-    // STEP 4: MAKE WITHDRAW
+    // STEP 5: MAKE WITHDRAW
     // *********************************************************************************
 
     // Create expected P2ID output note with the computed tag

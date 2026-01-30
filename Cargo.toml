@@ -3,6 +3,7 @@ members = [
     "contracts/bank-account",
     "contracts/deposit-note",
     "contracts/withdraw-request-note",
+    "contracts/init-tx-script",
     "integration"
 ]
 resolver = "2"

@@ -1446,6 +1446,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "init-tx-script"
+version = "0.1.0"
+dependencies = [
+ "miden",
+]
+
+[[package]]
 name = "inout"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
