@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches:
+    - main
+  pull_request:
+
+jobs:
+  integration_tests:
+    name: Run integration tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install Rust
+      run: |
+        rustup update --no-self-update
+        rustc --version
+    - name: Install Miden cargo extension
+      uses: actions-rs/cargo@v1
+      with:
+        command: install
+        args: cargo-miden
+    - name: Run integration tests
+      working-directory: integration
+      run: cargo test

@@ -1,0 +1,11 @@
+[workspace]
+members = [
+    "contracts/counter-account",
+    "contracts/increment-note",
+    "integration"
+]
+resolver = "2"
+edition = "2021"
+
+[workspace.dependencies]
+miden = { version = "0.7" }
