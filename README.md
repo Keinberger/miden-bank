@@ -1,124 +1,193 @@
-# Miden Project
+# Miden Bank
 
-A workspace structure for building Miden smart contract applications.
+A complete banking application built with the Miden Rust compiler, demonstrating deposits, withdrawals, and asset management on the Miden protocol.
 
-## **Installation**
+This repository serves as the companion code for the **Building a Bank with Miden Rust** tutorial in the [Miden Documentation](https://docs.miden.xyz).
 
-Before getting started, ensure you have the following prerequisites:
+## Overview
 
-1. **Install Rust** - Make sure you have Rust installed on your system. If not, install it from [rustup.rs](https://rustup.rs/)
+This banking system showcases all major Miden Rust compiler concepts:
 
-2. **Install midenup toolchain** - Follow the installation instructions at: <https://github.com/0xMiden/midenup>
+- **Account Components** - Smart contracts with persistent storage
+- **Note Scripts** - Code that executes when notes are consumed
+- **Transaction Scripts** - Owner-initiated account operations
+- **Cross-Component Calls** - Communication between contracts
+- **Output Notes** - Programmatic note creation (P2ID pattern)
 
-## **Structure**
+## Repository Structure
 
-```text
-miden-project/
-├── contracts/                   # Each contract as individual crate
-│   ├── counter-account/         # Example: Counter account contract
-│   └── increment-note/          # Example: Increment note contract
-├── integration/                 # Integration crate (scripts + tests)
+```
+miden-bank/
+├── contracts/
+│   ├── bank-account/           # Main bank account component
+│   │   ├── Cargo.toml
+│   │   └── src/lib.rs
+│   ├── deposit-note/           # Note script for deposits
+│   │   ├── Cargo.toml
+│   │   └── src/lib.rs
+│   ├── withdraw-request-note/  # Note script for withdrawal requests
+│   │   ├── Cargo.toml
+│   │   └── src/lib.rs
+│   └── init-tx-script/         # Transaction script for initialization
+│       ├── Cargo.toml
+│       └── src/lib.rs
+├── integration/
 │   ├── src/
-│   │   ├── bin/                 # Rust binaries for on-chain interactions
-│   │   ├── config.rs            # Temporary config file (do not modify!)
-│   │   ├── helpers.rs           # Temporary helper file (do not modify!)
-│   │   └── lib.rs
-│   └── tests/                   # Test files
-├── Cargo.toml                   # Workspace root
-└── rust-toolchain.toml          # Temporary Rust toolchain specification
+│   │   └── helpers.rs          # Test utilities
+│   └── tests/
+│       ├── deposit_test.rs     # Deposit flow tests
+│       └── withdraw_test.rs    # Withdrawal flow tests
+└── Cargo.toml                  # Workspace configuration
 ```
 
-## **Design Philosophy**
+## Components
 
-This workspace follows a clean separation of concerns:
+### Bank Account (`contracts/bank-account`)
 
-### **Contracts Folder - Miden Development**
+The core account component that:
+- Tracks depositor balances in a `StorageMap`
+- Manages an initialization flag in `Value` storage
+- Enforces a maximum deposit limit (1,000,000 tokens)
+- Creates P2ID output notes for withdrawals
 
-The `contracts/` folder is your primary working directory when writing Miden smart contract code. Each contract is organized as its own individual crate, allowing for:
+### Deposit Note (`contracts/deposit-note`)
 
-- Independent versioning and dependencies
-- Clear isolation between different contracts
-- Easy contract management and modularization
+A note script that:
+- Retrieves the sender (depositor) via `active_note::get_sender()`
+- Gets attached assets via `active_note::get_assets()`
+- Calls `bank_account::deposit()` to credit the depositor
 
-When you're working on Miden Rust code (writing smart contracts), you'll be working in the `contracts/` directory.
+### Withdraw Request Note (`contracts/withdraw-request-note`)
 
-### **Integration Crate - Scripts and Testing**
+A note script that:
+- Parses withdrawal parameters from note inputs
+- Calls `bank_account::withdraw()` to process the request
+- Triggers P2ID note creation for asset transfer
 
-The `integration/` crate is your working directory for interacting with compiled contracts. All on-chain interactions, scripts, and tests are housed within this single crate. This includes:
+### Init Transaction Script (`contracts/init-tx-script`)
 
-- **Binaries** (`src/bin/`): Rust executables for deploying and interacting with your contracts on-chain
-- **Tests** (`tests/`): Integration tests for validating your contract behavior
+A transaction script that:
+- Initializes the bank account
+- Enables deposits by setting the initialized flag
+- Makes the account visible on-chain
 
-This structure provides flexibility as your application grows, allowing you to add custom dependencies, sophisticated tooling, and independent configuration specific to your deployment and testing needs.
+## Prerequisites
 
-> **Important Note**: The `helpers.rs` file inside the `integration/` crate is temporary and exists only to facilitate current development workflows. **Do not modify this file unless you know what you are doing!** It will be removed in future versions.
+- [Rust](https://rustup.rs/) (latest stable)
+- [Miden CLI](https://docs.miden.xyz) (`midenup`)
 
-## **Adding New Contracts**
-
-To create a new contract crate, run the following command from the workspace root:
+Install the Miden toolchain:
 
 ```bash
-miden cargo-miden new --account contracts/my-account
+curl -sSL https://raw.githubusercontent.com/0xMiden/midenup/main/install.sh | bash
+midenup
 ```
 
-This will scaffold a new contract crate inside the `contracts/` directory with all the necessary boilerplate.
+## Building
 
-## **Adding Binaries for On-Chain Interactions**
-
-Binaries are used for deploying contracts and performing on-chain interactions. To add a new binary:
-
-1. Create a new `.rs` file in `integration/src/bin/` (e.g., `deploy_contract.rs`)
-2. Write your binary code as a standard Rust executable with a `main()` function
-3. Run the binary using the commands shown below
-
-## **Testing Your Contracts**
-
-Tests are located in `integration/tests/`. To add a new test:
-
-1. Create a new test file in `integration/tests/` (e.g., `my_contract_test.rs`)
-2. Write your test functions using the standard Rust testing framework
-3. Run tests using the commands shown below
-
-## **Commands**
-
-### Compile a Contract
+Build all contracts in the correct dependency order:
 
 ```bash
-# Compile a specific contract
-miden cargo-miden build --manifest-path contracts/counter-account/Cargo.toml
+# Build the bank account component first
+cd contracts/bank-account
+miden build
 
-# Or navigate to the contract directory
-cd contracts/counter-account
-miden cargo-miden build
+# Build note scripts (depend on bank-account)
+cd ../deposit-note
+miden build
+
+cd ../withdraw-request-note
+miden build
+
+# Build transaction script
+cd ../init-tx-script
+miden build
 ```
 
-### Run a Binary
+## Testing
+
+Run the integration tests:
 
 ```bash
-# Navigate to integration crate and run a binary
-cd integration
-cargo run --bin increment_count
+# Run all tests
+cargo test -p integration -- --nocapture
+
+# Run specific tests
+cargo test -p integration deposit_test -- --nocapture
+cargo test -p integration withdraw_test -- --nocapture
+
+# Test failure cases
+cargo test -p integration deposit_exceeds_max_should_fail -- --nocapture
+cargo test -p integration deposit_without_init_should_fail -- --nocapture
 ```
 
-### Run Tests
+## Tutorial
 
-```bash
-# Navigate to integration crate and run tests
-cd integration
-cargo test                      # Run all tests
-cargo test counter_test         # Run specific test file
+This repository accompanies the multi-part tutorial covering:
+
+1. **Account Components and Storage** - `#[component]`, `Value`, `StorageMap`
+2. **Constants and Constraints** - Business rules with `assert!()`
+3. **Asset Management** - `native_account::add_asset()` and `remove_asset()`
+4. **Note Scripts** - `#[note_script]`, `active_note::` APIs
+5. **Cross-Component Calls** - Generated bindings and dependencies
+6. **Transaction Scripts** - `#[tx_script]`, initialization patterns
+7. **Creating Output Notes** - P2ID pattern, `Recipient::compute()`
+8. **Complete Flows** - End-to-end deposit and withdrawal
+
+## Key Concepts Demonstrated
+
+### Storage Types
+
+```rust
+#[component]
+struct Bank {
+    #[storage(slot(0), description = "initialized")]
+    initialized: Value,
+
+    #[storage(slot(1), description = "balances")]
+    balances: StorageMap,
+}
 ```
 
-## **Extending the Workspace**
+### Note Script Pattern
 
-If you need to extend the workspace with new crates (for example, to add libraries or additional tools), it is recommended to add these new crates in the root of the project directory. This helps keep the project structure clean and makes it easier to manage dependencies and workspace configuration.
+```rust
+#[note_script]
+fn run(_arg: Word) {
+    let depositor = active_note::get_sender();
+    let assets = active_note::get_assets();
 
-To add a new crate to the workspace:
+    for asset in assets {
+        bank_account::deposit(depositor, asset);
+    }
+}
+```
 
-1. From the project root, run:
-   ```bash
-   cargo new my-new-crate
-   ```
-2. Then add the crate path (e.g., `my-new-crate`) to the `[workspace].members` section of your `Cargo.toml`.
+### Transaction Script Pattern
 
-**Note:** Avoid adding new crates as subdirectories under `contracts/` or `integration/`, unless they are intended to be contract crates or part of integration specifically. Keeping new crates at the root makes the project easier to understand and maintain.
+```rust
+#[tx_script]
+fn run(_arg: Word, account: &mut Account) {
+    account.initialize();
+}
+```
+
+### P2ID Note Creation
+
+```rust
+let recipient = Recipient::compute(serial_num, script_root, inputs);
+let note_idx = output_note::create(tag, aux, note_type, execution_hint, recipient);
+native_account::remove_asset(asset.clone());
+output_note::add_asset(asset.clone(), note_idx);
+```
+
+## License
+
+This project is licensed under the MIT License.
+
+## Resources
+
+- [Miden Documentation](https://docs.miden.xyz)
+- [Miden Rust Compiler](https://github.com/0xMiden/compiler)
+- [Miden VM](https://github.com/0xMiden/miden-vm)
+- [Build On Miden Telegram](https://t.me/BuildOnMiden)
