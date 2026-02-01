@@ -124,25 +124,14 @@ impl Bank {
     /// Panics if the deposit amount exceeds `MAX_DEPOSIT_AMOUNT`.
     /// Panics if the bank has not been initialized.
     pub fn deposit(&mut self, depositor: AccountId, deposit_asset: Asset) {
-        // ========================================================================
-        // CONSTRAINT: Bank must be initialized
-        // ========================================================================
+        // Ensure the bank is initialized before accepting deposits
         self.require_initialized();
 
         // Extract the fungible amount from the asset
         // Asset inner layout for fungible: [amount, 0, faucet_suffix, faucet_prefix]
-        // Asset.inner is a Word field, access it directly
         let deposit_amount = deposit_asset.inner[0];
 
-        // ========================================================================
-        // CONSTRAINT: Maximum deposit amount check
-        // ========================================================================
-        // Enforce that the deposit amount does not exceed the maximum allowed.
-        // This check uses Rust's assert! macro which will cause the transaction
-        // to fail if the condition is not met. In the Miden VM, a failed assertion
-        // means the proof cannot be generated, effectively rejecting the transaction.
-        //
-        // We compare using as_u64() to get the underlying u64 value from the Felt.
+        // Validate deposit amount does not exceed maximum
         assert!(
             deposit_amount.as_u64() <= MAX_DEPOSIT_AMOUNT,
             "Deposit amount exceeds maximum allowed"
@@ -177,6 +166,10 @@ impl Bank {
     /// * `tag` - The note tag for the P2ID output note (allows caller to specify routing)
     /// * `aux` - Auxiliary data for the note (application-specific, typically 0)
     /// * `note_type` - Note type: 1 = Public (stored on-chain), 2 = Private (off-chain)
+    ///
+    /// # Panics
+    /// Panics if the withdrawal amount exceeds the depositor's current balance.
+    /// Panics if the bank has not been initialized.
     pub fn withdraw(
         &mut self,
         depositor: AccountId,
@@ -186,6 +179,9 @@ impl Bank {
         aux: Felt,
         note_type: Felt,
     ) {
+        // Ensure the bank is initialized before processing withdrawals
+        self.require_initialized();
+
         // Extract the fungible amount from the asset
         let withdraw_amount = withdraw_asset.inner[0];
 
@@ -197,8 +193,16 @@ impl Bank {
             withdraw_asset.inner[2], // asset suffix (faucet)
         ]);
 
-        // Update balance: current - withdraw_amount
+        // Get current balance and validate sufficient funds exist.
+        // This check is critical: Felt arithmetic is modular, so subtracting
+        // more than the balance would silently wrap to a large positive number.
         let current_balance: Felt = self.balances.get(&key);
+        assert!(
+            current_balance.as_u64() >= withdraw_amount.as_u64(),
+            "Withdrawal amount exceeds available balance"
+        );
+
+        // Update balance: current - withdraw_amount
         let new_balance = current_balance - withdraw_amount;
         self.balances.set(key, new_balance);
 
