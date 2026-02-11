@@ -36,12 +36,12 @@ struct Bank {
     /// Tracks whether the bank has been initialized (deposits enabled).
     /// Word layout: [is_initialized (0 or 1), 0, 0, 0]
     /// Must be set to 1 via `initialize()` before deposits are accepted.
-    #[storage(slot(0), description = "initialized")]
+    #[storage(description = "initialized")]
     initialized: Value,
 
     /// Maps depositor AccountId -> balance (as Felt)
     /// Key is derived from AccountId: [prefix, suffix, asset_prefix, asset_suffix]
-    #[storage(slot(1), description = "balances")]
+    #[storage(description = "balances")]
     balances: StorageMap,
 }
 
@@ -85,17 +85,18 @@ impl Bank {
 
     /// Returns the P2ID note script root digest.
     ///
-    /// This is a constant value derived from the standard P2ID note script in miden-lib.
+    /// This is a constant value derived from the standard P2ID note script in miden-standards.
     /// The digest is the MAST root of the compiled P2ID note script.
     ///
-    /// Note: This value is version-specific to miden-lib. If the P2ID script changes
+    /// Note: This value is version-specific to miden-standards. If the P2ID script changes
     /// in a future version, this digest will need to be updated.
+    ///
     fn p2id_note_root() -> Digest {
         Digest::from_word(Word::new([
-            Felt::from_u64_unchecked(15783632360113277539),
-            Felt::from_u64_unchecked(7403765918285273520),
-            Felt::from_u64_unchecked(15691985194755641846),
-            Felt::from_u64_unchecked(10399643920503194563),
+            Felt::from_u64_unchecked(13362761878458161062),
+            Felt::from_u64_unchecked(15090726097241769395),
+            Felt::from_u64_unchecked(444910447169617901),
+            Felt::from_u64_unchecked(3558201871398422326),
         ]))
     }
 
@@ -164,7 +165,6 @@ impl Bank {
     /// * `withdraw_asset` - The fungible asset to withdraw
     /// * `serial_num` - Unique serial number for the P2ID output note
     /// * `tag` - The note tag for the P2ID output note (allows caller to specify routing)
-    /// * `aux` - Auxiliary data for the note (application-specific, typically 0)
     /// * `note_type` - Note type: 1 = Public (stored on-chain), 2 = Private (off-chain)
     ///
     /// # Panics
@@ -176,7 +176,6 @@ impl Bank {
         withdraw_asset: Asset,
         serial_num: Word,
         tag: Felt,
-        aux: Felt,
         note_type: Felt,
     ) {
         // Ensure the bank is initialized before processing withdrawals
@@ -207,7 +206,7 @@ impl Bank {
         self.balances.set(key, new_balance);
 
         // Create a P2ID note to send the requested asset back to the depositor
-        self.create_p2id_note(serial_num, &withdraw_asset, depositor, tag, aux, note_type);
+        self.create_p2id_note(serial_num, &withdraw_asset, depositor, tag, note_type);
     }
 
     /// Create a P2ID (Pay-to-ID) note to send assets to a recipient.
@@ -217,7 +216,6 @@ impl Bank {
     /// * `asset` - The asset to include in the note
     /// * `recipient_id` - The AccountId that can consume this note
     /// * `tag` - The note tag (passed by caller to allow proper P2ID routing)
-    /// * `aux` - Auxiliary data for application-specific purposes
     /// * `note_type` - Note type as Felt: 1 = Public, 2 = Private
     fn create_p2id_note(
         &mut self,
@@ -225,22 +223,16 @@ impl Bank {
         asset: &Asset,
         recipient_id: AccountId,
         tag: Felt,
-        aux: Felt,
         note_type: Felt,
     ) {
         // Convert the passed tag Felt to a Tag
         // The caller is responsible for computing the proper P2ID tag
-        // (typically LocalAny with account ID bits embedded)
+        // (typically with_account_target for the recipient)
         let tag = Tag::from(tag);
 
         // Convert note_type Felt to NoteType
         // 1 = Public (stored on-chain), 2 = Private (off-chain)
         let note_type = NoteType::from(note_type);
-
-        // Execution hint: always (standard P2ID behavior per miden-base)
-        // This is hardcoded to match miden-base's standard P2ID note implementation
-        // which uses NoteExecutionHint::always() - represented as 0 in Felt form
-        let execution_hint = felt!(0);
 
         // Get the P2ID note script root digest
         let script_root = Self::p2id_note_root();
@@ -248,26 +240,21 @@ impl Bank {
         // Compute the recipient hash from:
         // - serial_num: unique identifier for this note instance
         // - script_root: the P2ID note script's MAST root
-        // - inputs: the target account ID (padded to 8 elements)
+        // - inputs: the target account ID [suffix, prefix]
         //
-        // The P2ID script expects inputs as [suffix, prefix, 0, 0, 0, 0, 0, 0]
+        // This matches the standard P2ID recipient format used by miden-standards:
+        // NoteInputs::new(vec![target.suffix(), target.prefix().as_felt()])
         let recipient = Recipient::compute(
             serial_num,
             script_root,
             vec![
                 recipient_id.suffix,
                 recipient_id.prefix,
-                felt!(0),
-                felt!(0),
-                felt!(0),
-                felt!(0),
-                felt!(0),
-                felt!(0),
             ],
         );
 
         // Create the output note
-        let note_idx = output_note::create(tag, aux, note_type, execution_hint, recipient);
+        let note_idx = output_note::create(tag, note_type, recipient);
 
         // Remove the asset from the bank's vault
         native_account::remove_asset(asset.clone());

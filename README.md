@@ -128,7 +128,7 @@ This repository accompanies the multi-part tutorial covering:
 1. **Account Components and Storage** - `#[component]`, `Value`, `StorageMap`
 2. **Constants and Constraints** - Business rules with `assert!()`
 3. **Asset Management** - `native_account::add_asset()` and `remove_asset()`
-4. **Note Scripts** - `#[note_script]`, `active_note::` APIs
+4. **Note Scripts** - `#[note]` struct + impl pattern, `active_note::` APIs
 5. **Cross-Component Calls** - Generated bindings and dependencies
 6. **Transaction Scripts** - `#[tx_script]`, initialization patterns
 7. **Creating Output Notes** - P2ID pattern, `Recipient::compute()`
@@ -141,10 +141,10 @@ This repository accompanies the multi-part tutorial covering:
 ```rust
 #[component]
 struct Bank {
-    #[storage(slot(0), description = "initialized")]
+    #[storage(description = "initialized")]
     initialized: Value,
 
-    #[storage(slot(1), description = "balances")]
+    #[storage(description = "balances")]
     balances: StorageMap,
 }
 ```
@@ -152,13 +152,19 @@ struct Bank {
 ### Note Script Pattern
 
 ```rust
-#[note_script]
-fn run(_arg: Word) {
-    let depositor = active_note::get_sender();
-    let assets = active_note::get_assets();
+#[note]
+struct DepositNote;
 
-    for asset in assets {
-        bank_account::deposit(depositor, asset);
+#[note]
+impl DepositNote {
+    #[note_script]
+    fn run(self, _arg: Word) {
+        let depositor = active_note::get_sender();
+        let assets = active_note::get_assets();
+
+        for asset in assets {
+            bank_account::deposit(depositor, asset);
+        }
     }
 }
 ```
@@ -176,7 +182,7 @@ fn run(_arg: Word, account: &mut Account) {
 
 ```rust
 let recipient = Recipient::compute(serial_num, script_root, inputs);
-let note_idx = output_note::create(tag, aux, note_type, execution_hint, recipient);
+let note_idx = output_note::create(tag, note_type, recipient);
 native_account::remove_asset(asset.clone());
 output_note::add_asset(asset.clone(), note_idx);
 ```
