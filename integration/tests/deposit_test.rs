@@ -3,13 +3,35 @@ use integration::helpers::{
     AccountCreationConfig, NoteCreationConfig,
 };
 
-use miden_client::{account::StorageMap, note::NoteAssets, transaction::OutputNote, Felt, Word};
-use miden_objects::{
-    asset::{Asset, FungibleAsset},
-    transaction::TransactionScript,
+use miden_client::{
+    account::{StorageMap, StorageSlot, StorageSlotName},
+    note::NoteAssets,
+    transaction::{OutputNote, TransactionScript},
+    Felt, Word,
 };
+use miden_client::asset::{Asset, FungibleAsset};
 use miden_testing::{Auth, MockChain};
 use std::{path::Path, sync::Arc};
+
+/// Helper to create the bank account storage slots with named slot names
+fn bank_storage_slots() -> (StorageSlotName, StorageSlotName, Vec<StorageSlot>) {
+    let initialized_slot =
+        StorageSlotName::new("miden::component::miden_bank_account::initialized")
+            .expect("Valid slot name");
+    let balances_slot =
+        StorageSlotName::new("miden::component::miden_bank_account::balances")
+            .expect("Valid slot name");
+
+    let slots = vec![
+        StorageSlot::with_value(initialized_slot.clone(), Word::default()),
+        StorageSlot::with_map(
+            balances_slot.clone(),
+            StorageMap::with_entries([]).expect("Empty storage map"),
+        ),
+    ];
+
+    (initialized_slot, balances_slot, slots)
+}
 
 #[tokio::test]
 async fn deposit_test() -> anyhow::Result<()> {
@@ -39,14 +61,10 @@ async fn deposit_test() -> anyhow::Result<()> {
         true,
     )?);
 
-    // Create the bank account with storage slots:
-    // - Slot 0: initialized flag (Value, starts as 0)
-    // - Slot 1: balances map (StorageMap)
+    // Create the bank account with named storage slots
+    let (_initialized_slot, balances_slot, storage_slots) = bank_storage_slots();
     let bank_cfg = AccountCreationConfig {
-        storage_slots: vec![
-            miden_client::account::StorageSlot::Value(Word::default()),
-            miden_client::account::StorageSlot::Map(StorageMap::with_entries([])?),
-        ],
+        storage_slots,
         ..Default::default()
     };
 
@@ -71,7 +89,7 @@ async fn deposit_test() -> anyhow::Result<()> {
 
     // Add bank account and deposit note to mockchain
     builder.add_account(bank_account.clone())?;
-    builder.add_output_note(OutputNote::Full(deposit_note.clone().into()));
+    builder.add_output_note(OutputNote::Full(deposit_note.clone()));
 
     // Build the mock chain
     let mut mock_chain = builder.build()?;
@@ -125,9 +143,8 @@ async fn deposit_test() -> anyhow::Result<()> {
         faucet.id().suffix(),
     ]);
 
-    // Get the depositor's balance from the bank's storage
-    // Note: balances map is now at slot 1 (slot 0 is the initialized flag)
-    let balance = bank_account.storage().get_map_item(1, depositor_key)?;
+    // Get the depositor's balance from the bank's storage using named slot
+    let balance = bank_account.storage().get_map_item(&balances_slot, depositor_key)?;
 
     // The balance should be stored as [amount, 0, 0, 0] in the Word
     // But since we store just the Felt, check the first element
@@ -181,12 +198,10 @@ async fn deposit_exceeds_max_should_fail() -> anyhow::Result<()> {
         true,
     )?);
 
-    // Create the bank account with storage slots
+    // Create the bank account with named storage slots
+    let (_initialized_slot, _balances_slot, storage_slots) = bank_storage_slots();
     let bank_cfg = AccountCreationConfig {
-        storage_slots: vec![
-            miden_client::account::StorageSlot::Value(Word::default()),
-            miden_client::account::StorageSlot::Map(StorageMap::with_entries([])?),
-        ],
+        storage_slots,
         ..Default::default()
     };
 
@@ -208,7 +223,7 @@ async fn deposit_exceeds_max_should_fail() -> anyhow::Result<()> {
 
     // Add bank account and deposit note to mockchain
     builder.add_account(bank_account.clone())?;
-    builder.add_output_note(OutputNote::Full(deposit_note.clone().into()));
+    builder.add_output_note(OutputNote::Full(deposit_note.clone()));
 
     // Build the mock chain
     let mut mock_chain = builder.build()?;
@@ -275,13 +290,11 @@ async fn deposit_without_init_should_fail() -> anyhow::Result<()> {
         true,
     )?);
 
-    // Create the bank account with storage slots
+    // Create the bank account with named storage slots
     // Note: We intentionally do NOT initialize the bank
+    let (_initialized_slot, _balances_slot, storage_slots) = bank_storage_slots();
     let bank_cfg = AccountCreationConfig {
-        storage_slots: vec![
-            miden_client::account::StorageSlot::Value(Word::default()),
-            miden_client::account::StorageSlot::Map(StorageMap::with_entries([])?),
-        ],
+        storage_slots,
         ..Default::default()
     };
 
@@ -304,7 +317,7 @@ async fn deposit_without_init_should_fail() -> anyhow::Result<()> {
 
     // Add bank account and deposit note to mockchain
     builder.add_account(bank_account.clone())?;
-    builder.add_output_note(OutputNote::Full(deposit_note.clone().into()));
+    builder.add_output_note(OutputNote::Full(deposit_note.clone()));
 
     // Build the mock chain
     let mock_chain = builder.build()?;

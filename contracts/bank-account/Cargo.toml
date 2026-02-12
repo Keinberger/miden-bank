@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-miden = { workspace = true }
+miden = { version = "0.10" }
 
 [package.metadata.component]
 package = "miden:bank-account"

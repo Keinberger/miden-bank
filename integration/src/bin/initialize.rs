@@ -19,11 +19,10 @@ use integration::helpers::{
 
 use anyhow::{Context, Result};
 use miden_client::{
-    account::StorageMap,
-    transaction::TransactionRequestBuilder,
+    account::{StorageMap, StorageSlot, StorageSlotName},
+    transaction::{TransactionRequestBuilder, TransactionScript},
     Word,
 };
-use miden_objects::transaction::TransactionScript;
 use std::{path::Path, sync::Arc};
 
 #[tokio::main]
@@ -53,15 +52,25 @@ async fn main() -> Result<()> {
     );
     println!("  ✓ Init transaction script built");
 
-    // Create the bank account with storage slots:
-    // - Slot 0: initialized flag (Value, starts as 0)
-    // - Slot 1: balances map (StorageMap)
+    // Create the bank account with named storage slots:
+    // - initialized: Value (starts as 0)
+    // - balances: StorageMap
     println!("\nCreating bank account...");
+    let initialized_slot =
+        StorageSlotName::new("miden::component::miden_bank_account::initialized")
+            .expect("Valid slot name");
+    let balances_slot =
+        StorageSlotName::new("miden::component::miden_bank_account::balances")
+            .expect("Valid slot name");
+
     let bank_cfg = AccountCreationConfig {
         storage_slots: vec![
-            miden_client::account::StorageSlot::Value(Word::default()),
-            miden_client::account::StorageSlot::Map(StorageMap::with_entries([])
-                .context("Failed to create empty storage map")?),
+            StorageSlot::with_value(initialized_slot, Word::default()),
+            StorageSlot::with_map(
+                balances_slot,
+                StorageMap::with_entries([])
+                    .context("Failed to create empty storage map")?,
+            ),
         ],
         ..Default::default()
     };

@@ -71,7 +71,7 @@ async fn main() -> Result<()> {
 
     match bank_account_record {
         Some(record) => {
-            println!("  ✓ Bank account found: {}", record.account().id().to_hex());
+            println!("  ✓ Bank account found: {}", record.account_data().id().to_hex());
         }
         None => {
             bail!(
@@ -139,7 +139,7 @@ async fn main() -> Result<()> {
     // Consume the deposit note with the bank account
     println!("\nExecuting deposit (bank consuming the note)...");
     let consume_note_request = TransactionRequestBuilder::new()
-        .unauthenticated_input_notes([(deposit_note.clone(), None)])
+        .input_notes([(deposit_note.clone(), None)])
         .build()
         .context("Failed to build consume note transaction request")?;
 

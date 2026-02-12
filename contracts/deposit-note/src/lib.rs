@@ -16,21 +16,28 @@ use crate::bindings::miden::bank_account::bank_account;
 /// 1. Note is created by a user with fungible assets attached
 /// 2. Bank account consumes this note
 /// 3. Note script reads the sender (depositor) and assets
-/// 4. For each asset, calls `bank_account::deposit(depositor, asset)`
+///
+/// 4. For each asset, calls `bank_account::deposit(depositor,y asset)`
 /// 5. Bank receives the asset and updates the depositor's balance
 ///
 /// # Note Inputs
 /// None required - the depositor is automatically the note's sender.
-#[note_script]
-fn run(_arg: Word) {
-    // The depositor is whoever created/sent this note
-    let depositor = active_note::get_sender();
+#[note]
+struct DepositNote;
 
-    // Get all assets attached to this note
-    let assets = active_note::get_assets();
+#[note]
+impl DepositNote {
+    #[note_script]
+    fn run(self, _arg: Word) {
+        // The depositor is whoever created/sent this note
+        let depositor = active_note::get_sender();
 
-    // Deposit each asset into the bank
-    for asset in assets {
-        bank_account::deposit(depositor, asset);
+        // Get all assets attached to this note
+        let assets = active_note::get_assets();
+
+        // Deposit each asset into the bank
+        for asset in assets {
+            bank_account::deposit(depositor, asset);
+        }
     }
 }

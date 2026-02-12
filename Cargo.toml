@@ -1,14 +1,14 @@
 [workspace]
 members = [
-    "contracts/bank-account",
-    "contracts/deposit-note",
-    "contracts/withdraw-request-note",
-    "contracts/init-tx-script",
     "integration"
 ]
+exclude = [
+    "contracts/",
+]
 resolver = "2"
+
+[workspace.package]
 edition = "2021"
 
 [workspace.dependencies]
-miden = { version = "0.8" }
 
